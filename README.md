@@ -114,3 +114,21 @@ docs: Git 워크플로우 가이드라인 추가
 
 커밋
 
+
+
+##추기 
+
+만약 main에 합치기 전에, 작업 중인 feature 브랜치 자체를 GitHub에 올려서 백업하거나 다른 사람에게 보여주고 싶다면, push할 때 그 브랜치 이름을 명시해야 합니다.
+
+예를 들어 feature/gemini-api-call 브랜치에서 작업 중일 때,
+
+```bash
+
+# 1. (현재 브랜치 확인)
+git checkout feature/gemini-api-call
+
+# 2. 이 브랜치를 'origin'(GitHub)에 똑같은 이름으로 업로드
+# -u 옵션은 한 번만 쓰면 됨 (로컬 브랜치와 원격 브랜치를 '연결'해줌)
+git push -u origin feature/gemini-api-call
+이렇게 push를 해야 비로소 GitHub 웹사이트에 feature/gemini-api-call 브랜치가 보이게 됩니다.
+```
