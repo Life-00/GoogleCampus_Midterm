@@ -1,4 +1,3 @@
 # Poetry local virtual environment
 .venv/
-
 .env
