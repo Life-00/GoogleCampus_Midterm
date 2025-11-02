@@ -1,165 +1,190 @@
-
 import os
-import re # 1. Gemini 응답을 파싱하기 위해 're' (정규표현식) 임포트
+import re
 import google.generativeai as genai
 from dotenv import load_dotenv
 import PIL.Image
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-# --- ⬇️ Vertex AI (Imagen) 라이브러리 임포트 ⬇️ ---
 import vertexai
 from vertexai.preview.vision_models import ImageGenerationModel
-# --- ⬆️ Vertex AI (Imagen) 라이브러리 임포트 ⬆️ ---
 
+# --- ⬇️ (신규) Base64 이미지 처리를 위한 라이브러리 ⬇️ ---
+import base64
+import io
+# --- ⬆️ (신규) ⬆️ ---
 
-# --- .env 파일 경로 설정 (이전과 동일) ---
+# --- .env, Flask, 모델 초기화 (이전과 동일) ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
 dotenv_path = os.path.join(project_root, '.env')
-
 load_dotenv(dotenv_path=dotenv_path)
 
-# --- Flask 앱 설정 (이전과 동일) ---
 app = Flask(__name__)
 CORS(app) 
 
-# --- ⬇️ API 키 및 모델 초기화 ⬇️ ---
 api_key = os.getenv("GOOGLE_API_KEY")
-if not api_key:
-    raise ValueError(f"GOOGLE_API_KEY를 찾을 수 없습니다. {dotenv_path} 파일을 확인하세요.")
-
-# 1. Gemini 설정 (이전과 동일)
+if not api_key: raise ValueError("GOOGLE_API_KEY가 .env 파일에 설정되지 않았습니다.")
 genai.configure(api_key=api_key)
 gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 print("✅ API 키 및 Gemini 모델 로드 성공.")
 
-# 2. Vertex AI (Imagen) 설정
-GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT") # .env 파일에 프로젝트 ID가 있어야 함
-LOCATION = "us-central1" # 또는 본인의 리전
-
-if not GOOGLE_CLOUD_PROJECT:
-    raise ValueError("GOOGLE_CLOUD_PROJECT가 .env 파일에 설정되지 않았습니다.")
-
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+LOCATION = "us-central1" 
+if not GOOGLE_CLOUD_PROJECT: raise ValueError("GOOGLE_CLOUD_PROJECT가 .env 파일에 설정되지 않았습니다.")
 vertexai.init(project=GOOGLE_CLOUD_PROJECT, location=LOCATION)
-imagen_model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-002") #
+imagen_model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-002")
 print("✅ Vertex AI (Imagen) 모델 로드 성공.")
-# --- ⬆️ API 키 및 모델 초기화 ⬆️ ---
+# --- (초기화 끝) ---
 
 
+# --- (Imagen 함수 - 이전과 동일) ---
 def generate_image_with_imagen(prompt_text):
-    """Imagen을 호출하여 이미지를 생성하고 URL을 반환합니다."""
     print(f"ℹ️ Imagen 호출 (프롬프트: {prompt_text})...")
     try:
-        #
-        images = imagen_model.generate_images(
-            prompt=prompt_text,
-            number_of_images=1,
-            aspect_ratio="1:1" #
-        )
-        # 생성된 이미지의 GCS URL이나 바이트를 얻어야 하지만, 
-        # 여기서는 간단히 로컬에 저장하고 서빙하는 대신, 
-        # (주의: generate_images는 URL을 직접 반환하지 않습니다. 
-        # 실제로는 이미지를 GCS에 저장하고 URL을 생성해야 하지만,
-        # 데모를 위해 임시 파일로 저장하고 Base64로 인코딩하는 것이 더 빠를 수 있습니다.
-        # 우선은 ._image_bytes를 사용해봅니다.)
-        
+        images = imagen_model.generate_images(prompt=prompt_text, number_of_images=1, aspect_ratio="1:1")
         if images and images[0]._image_bytes:
-            # 이미지를 Base64로 인코딩하여 프론트엔드로 바로 전송
-            import base64
             image_base64 = base64.b64encode(images[0]._image_bytes).decode('utf-8')
             image_data_url = f"data:image/png;base64,{image_base64}"
             print("✅ Imagen 이미지 생성 성공 (Base64 인코딩).")
             return image_data_url
-        else:
-            return None
-            
+        else: return None
     except Exception as e:
         print(f"❌ Imagen 생성 오류: {e}")
         return None
 
+# --- (파싱 함수 - 이전과 동일) ---
+def parse_and_generate_image(gemini_response_text):
+    """Gemini 응답 텍스트를 파싱하고, 텍스트와 Imagen 프롬프트를 추출합니다."""
+    
+    analysis_text = None
+    imagen_prompt = None
 
-def analyze_image_with_gemini(image_file):
-    """Gemini AI에게 프롬프트와 이미지를 보내 분석을 요청하는 함수"""
+    # 1. 'ANALYSIS_TEXT' 추출
+    match_text = re.search(r'\[ANALYSIS_TEXT_START\]\s*(.*?)\s*\[ANALYSIS_TEXT_END\]', gemini_response_text, re.DOTALL)
+    if match_text:
+        analysis_text = match_text.group(1).strip()
     
-    img = PIL.Image.open(image_file)
-    
-    # 3. --- ⬇️ Gemini 프롬프트 고도화 ⬇️ ---
-    system_prompt = """
-    당신은 AI 영양사 '푸드 렌즈'입니다.
-    당신의 임무는 사용자가 업로드한 음식 사진을 분석하고, 
-    일반인이 이해하기 쉬운 건강 정보를 제공하는 것입니다.
+    # 2. 'IMAGEN_PROMPT' 추출
+    match_prompt = re.search(r'\[IMAGEN_PROMPT_START\]\s*(.*?)\s*\[IMAGEN_PROMPT_END\]', gemini_response_text, re.DOTALL)
+    if match_prompt:
+        imagen_prompt = match_prompt.group(1).strip()
 
-    다음 단계를 *반드시* 순서대로 따르세요:
-    
-    1.  **음식 인식:** 사진 속의 주요 음식들을 인식합니다.
-    2.  **영양 정보 (추정):** 인식된 음식을 기반으로 '총 칼로리'와 '총 단백질'을 *대략적으로* 추정합니다.
-    3.  **건강 팁:** 해당 식단에 대해 간단한 건강 팁 1~2가지를 제공합니다. (예: "여기에 샐러드를 곁들이면 좋습니다.")
-    4.  **면책 조항:** 마지막에 "본 정보는 AI의 추정치이며..." 문구를 *반드시* 포함하세요.
-    
-    출력: 분석 결과를 친절하고 간결한 문장으로 설명해주세요.
-    
-    ---
-    
-    **[IMAGEN_PROMPT_START]**
-    (위 '건강 팁'을 바탕으로, 개선된 식단의 모습을 묘사하는 *간단한 영어* 이미지 생성 프롬프트를 딱 한 줄로 작성하세요. 
-    예: a photorealistic image of a hamburger with a fresh side salad on a wooden table)
-    **[IMAGEN_PROMPT_END]**
-    """
-    
-    prompt_package = [system_prompt, img]
-    response = gemini_model.generate_content(prompt_package)
-    
-    return response.text
-    # 4. --- ⬆️ Gemini 프롬프트 고도화 ⬆️ ---
+    # 3. (오류 방지) 만약 AI가 태그를 빼먹었다면, 그냥 원본 텍스트를 분석글로 사용
+    if analysis_text is None:
+        analysis_text = gemini_response_text.strip().replace("[IMAGEN_PROMPT_START]", "").replace("[IMAGEN_PROMPT_END]", "")
+        print("⚠️ 경고: AI가 [ANALYSIS_TEXT] 태그를 생성하지 않았습니다.")
 
+    print(f"ℹ️ 추출된 분석 텍스트: {analysis_text[:50]}...")
+    print(f"ℹ️ 추출된 Imagen 프롬프트: {imagen_prompt}")
+    
+    image_data_url = None
+    if imagen_prompt: # 프롬프트가 성공적으로 추출되었다면
+        image_data_url = generate_image_with_imagen(imagen_prompt)
+        
+    return analysis_text, image_data_url
 
+# --- (시스템 프롬프트 - 이전과 동일) ---
+SYSTEM_PROMPT = """
+당신은 AI 영양사 '푸드 렌즈'입니다.
+당신의 임무는 2가지입니다.
+
+**임무 1: 음식 분석 텍스트 생성**
+사용자가 업로드한 음식 사진을 분석하고, 에 나온 것처럼 다음 내용을 포함한 친절하고 훌륭한 분석글을 작성하세요.
+- 음식 인식
+- 영양 정보 (추정치)
+- 건강 팁 (개선할 수 있는 식단 1~2가지 제안 포함)
+- 면책 조항 (에서 사용했던 내용)
+
+**임무 2: Imagen 프롬프트 생성**
+위 '건강 팁'에서 제안한 *개선된 식단*을 묘사하는,
+간단한 영어 이미지 생성 프롬프트를 한 줄 작성하세요. (예: a photorealistic image of a hamburger with a fresh side salad)
+
+**[중요] 출력 형식:**
+당신의 최종 응답은 *반드시* 다음 형식을 정확히 따라야 합니다.
+
+[ANALYSIS_TEXT_START]
+(여기에 '임무 1'의 분석 텍스트를 모두 작성)
+[ANALYSIS_TEXT_END]
+
+[IMAGEN_PROMPT_START]
+(여기에 '임무 2'의 영어 프롬프트를 딱 한 줄 작성)
+[IMAGEN_PROMPT_END]
+"""
+
+# --- ⬇️ (수정) /analyze 엔드포인트: 일회성 호출로 변경 ⬇️ ---
 @app.route("/analyze", methods=["POST"])
 def analyze_endpoint():
-    print("ℹ️ /analyze 요청 받음.")
+    print("ℹ️ /analyze (첫 분석) 요청 받음.")
     
     if 'image_file' not in request.files:
         return jsonify({"error": "이미지 파일이 없습니다."}), 400
     
     file = request.files['image_file']
-    
     if file.filename == '':
         return jsonify({"error": "파일이 선택되지 않았습니다."}), 400
 
     try:
-        # 5. Gemini 분석 호출
-        gemini_raw_response = analyze_image_with_gemini(file)
+        img = PIL.Image.open(file)
         
-        # 6. --- ⬇️ Gemini 응답 파싱 ⬇️ ---
-        analysis_text = gemini_raw_response
-        imagen_prompt = None
+        # 1. start_chat() 대신 generate_content() 사용
+        response = gemini_model.generate_content([SYSTEM_PROMPT, img])
         
-        # 정규표현식으로 IMAGEN_PROMPT_START와 END 사이의 텍스트 추출
-        match = re.search(r'\[IMAGEN_PROMPT_START\]\s*(.*?)\s*\[IMAGEN_PROMPT_END\]', gemini_raw_response, re.DOTALL)
-        if match:
-            imagen_prompt = match.group(1).strip()
-            # 프론트에 보낼 텍스트에서 프롬프트 부분은 제거
-            analysis_text = re.sub(r'\[IMAGEN_PROMPT_START\].*?\[IMAGEN_PROMPT_END\]', '', gemini_raw_response, flags=re.DOTALL).strip()
-        
-        print(f"✅ Gemini 분석 완료.")
-        print(f"ℹ️ 추출된 Imagen 프롬프트: {imagen_prompt}")
-        # 6. --- ⬆️ Gemini 응답 파싱 ⬆️ ---
+        # 2. 응답 파싱 및 Imagen 호출
+        analysis_text, new_image_url = parse_and_generate_image(response.text)
 
-        image_data_url = None
-        if imagen_prompt:
-            # 7. Imagen 호출
-            image_data_url = generate_image_with_imagen(imagen_prompt)
-        
-        # 8. 프론트엔드로 두 AI의 결과 전송
+        # 3. 프론트엔드로 'history' 없이 응답만 전송
+        print("✅ 첫 분석 완료, 응답 전송.")
         return jsonify({
             "analysis": analysis_text,
-            "new_image_url": image_data_url # Imagen이 생성한 Base64 이미지 URL
+            "new_image_url": new_image_url
+            # 'history' 필드 제거
         })
 
     except Exception as e:
         print(f"❌ 분석 중 오류 발생: {e}")
         return jsonify({"error": f"AI 분석 중 오류 발생: {e}"}), 500
 
+# --- ⬇️ (수정) /chat 엔드포인트: 이미지와 기록을 모두 받음 ⬇️ ---
+@app.route("/chat", methods=["POST"])
+def chat_endpoint():
+    print("ℹ️ /chat (대화 이어가기) 요청 받음.")
+    data = request.json
+    
+    if not data or 'message' not in data or 'history_text' not in data or 'image_base64' not in data:
+        return jsonify({"error": "잘못된 요청: message, history_text, image_base64가 필요합니다."}), 400
+        
+    user_message = data['message']
+    history_text = data['history_text'] # ⭐️ 프론트에서 합친 대화 기록(텍스트)
+    image_base64_string = data['image_base64'] # ⭐️ 원본 이미지 (Base64)
+
+    try:
+        # 1. Base64 문자열을 다시 PIL 이미지로 변환
+        image_data = base64.b64decode(image_base64_string)
+        img = PIL.Image.open(io.BytesIO(image_data))
+        
+        # 2. generate_content에 모든 맥락(이미지, 기록, 새 질문)을 전달
+        response = gemini_model.generate_content([
+            SYSTEM_PROMPT, # 시스템 역할
+            img,           # 원본 이미지
+            history_text,  # 이전 대화 (텍스트)
+            user_message   # 새 질문
+        ])
+        
+        # 3. 응답 파싱 및 Imagen 호출
+        analysis_text, new_image_url = parse_and_generate_image(response.text)
+        
+        # 4. 프론트엔드로 새 응답 전송
+        print("✅ 후속 응답 완료, 응답 전송.")
+        return jsonify({
+            "analysis": analysis_text,
+            "new_image_url": new_image_url
+            # 'history' 필드 제거
+        })
+
+    except Exception as e:
+        print(f"❌ 채팅 중 오류 발생: {e}")
+        return jsonify({"error": f"AI 채팅 중 오류 발생: {e}"}), 500
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
