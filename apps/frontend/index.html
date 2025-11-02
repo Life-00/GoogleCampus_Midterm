@@ -4,16 +4,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 푸드 렌즈 데모 (분리형)</title>
+    <title>AI 푸드 렌즈 (고도화 v1)</title>
     <style>
         body { font-family: sans-serif; max-width: 600px; margin: 2em auto; padding: 0 1em; }
-        #result { margin-top: 1.5em; padding: 1em; border: 1px solid #ccc; background: #f9f9f9; white-space: pre-wrap; }
+        img { max-width: 100%; height: auto; margin-top: 1em; border: 1px solid #ddd; }
         #loading { display: none; color: #888; }
-        img { max-width: 100%; height: auto; margin-top: 1em; }
+        
+        /* ⬇️ --- 스타일 추가 --- ⬇️ */
+        #result-wrapper { display: flex; flex-wrap: wrap; gap: 1.5em; margin-top: 1.5em; }
+        #gemini-result { flex: 1; min-width: 300px; padding: 1em; border: 1px solid #ccc; background: #f9f9f9; white-space: pre-wrap; }
+        #imagen-result-wrapper { flex: 1; min-width: 200px; }
+        #imagen-generated-img { display: none; } /* 처음엔 숨김 */
+        /* ⬆️ --- 스타일 추가 --- ⬆️ */
     </style>
 </head>
 <body>
-    <h1>📸 AI 푸드 렌즈 데모</h1>
+    <h1>📸 AI 푸드 렌즈 (Gemini + Imagen)</h1>
     <p>분석하고 싶은 음식 사진을 업로드하세요.</p>
     
     <form id="upload-form">
@@ -21,26 +27,41 @@
         <button type="submit">분석하기</button>
     </form>
     
-    <p id="loading">AI가 열심히 분석 중입니다... 🧑‍🍳</p>
+    <p id="loading">AI가 열심히 분석하고, 그림도 그리고 있습니다... 🎨</p>
+    
+    <div id="result-wrapper">
+        <div id="gemini-result">
+            <h3>Gemini 분석 결과:</h3>
+            <p id="gemini-text">아직 분석 결과가 없습니다.</p>
+        </div>
+        
+        <div id="imagen-result-wrapper">
+            <h3>Imagen 추천 이미지:</h3>
+            <img id="imagen-generated-img" src="" alt="AI가 생성한 추천 식단 이미지" />
+            <p id="imagen-text">아직 생성된 이미지가 없습니다.</p>
+        </div>
+        </div>
+    
+    <h3>(원본 업로드 이미지)</h3>
     <img id="preview" src="" alt="업로드한 이미지 미리보기" style="display: none;" />
-    <div id="result">
-        <p>아직 분석 결과가 없습니다. 이미지를 업로드해 주세요.</p>
-    </div>
+
 
     <script>
         const form = document.getElementById('upload-form');
         const fileInput = document.getElementById('file-input');
         const loadingEl = document.getElementById('loading');
-        const resultEl = document.getElementById('result');
+        
+        // ⬇️ --- JS 요소 변경 --- ⬇️
+        const geminiTextEl = document.getElementById('gemini-text');
+        const imagenImgEl = document.getElementById('imagen-generated-img');
+        const imagenTextEl = document.getElementById('imagen-text');
         const previewEl = document.getElementById('preview');
+        // ⬆️ --- JS 요소 변경 --- ⬆️
 
-        // ⬇️ 여기가 수정되었습니다 ⬇️
         const BACKEND_URL = 'http://127.0.0.1:5000/analyze'; 
-        // ⬆️ 백엔드 Flask 서버 주소 ⬆️
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault(); 
-
             if (!fileInput.files || fileInput.files.length === 0) {
                 alert("파일을 선택해주세요.");
                 return;
@@ -50,14 +71,15 @@
             previewEl.src = URL.createObjectURL(file);
             previewEl.style.display = 'block';
             loadingEl.style.display = 'block';
-            resultEl.innerHTML = "<p>분석 중...</p>";
+            geminiTextEl.innerHTML = "분석 중...";
+            imagenTextEl.innerHTML = "생성 중...";
+            imagenImgEl.style.display = 'none';
 
             const formData = new FormData();
-            formData.append('image_file', file); // 'main.py'에서 받을 이름
+            formData.append('image_file', file);
 
             try {
-                // 백엔드로 파일 전송 (POST)
-                const response = await fetch(BACKEND_URL, { // 수정된 URL 사용
+                const response = await fetch(BACKEND_URL, {
                     method: 'POST',
                     body: formData, 
                 });
@@ -69,12 +91,26 @@
 
                 const data = await response.json();
                 
-                // 결과 표시
-                resultEl.innerHTML = data.analysis; 
+                // ⬇️ --- JS 결과 처리 고도화 --- ⬇️
+                
+                // 1. Gemini 결과 표시
+                geminiTextEl.innerHTML = data.analysis;
+
+                // 2. Imagen 결과 표시
+                if (data.new_image_url) {
+                    imagenImgEl.src = data.new_image_url; // Base64 이미지 데이터 URL
+                    imagenImgEl.style.display = 'block';
+                    imagenTextEl.style.display = 'none'; // "이미지 없음" 텍스트 숨기기
+                } else {
+                    imagenTextEl.innerHTML = "추천 이미지를 생성하지 못했습니다.";
+                    imagenTextEl.style.display = 'block';
+                }
+                // ⬆️ --- JS 결과 처리 고도화 --- ⬆️
 
             } catch (error) {
                 console.error("분석 중 오류 발생:", error);
-                resultEl.innerHTML = `<p style="color: red;">오류 발생: ${error.message}</p>`;
+                geminiTextEl.innerHTML = `<p style="color: red;">오류 발생: ${error.message}</p>`;
+                imagenTextEl.innerHTML = "";
             } finally {
                 loadingEl.style.display = 'none';
             }
