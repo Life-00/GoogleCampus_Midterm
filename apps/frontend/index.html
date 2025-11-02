@@ -1,0 +1,84 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 푸드 렌즈 데모 (분리형)</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 2em auto; padding: 0 1em; }
+        #result { margin-top: 1.5em; padding: 1em; border: 1px solid #ccc; background: #f9f9f9; white-space: pre-wrap; }
+        #loading { display: none; color: #888; }
+        img { max-width: 100%; height: auto; margin-top: 1em; }
+    </style>
+</head>
+<body>
+    <h1>📸 AI 푸드 렌즈 데모</h1>
+    <p>분석하고 싶은 음식 사진을 업로드하세요.</p>
+    
+    <form id="upload-form">
+        <input type="file" id="file-input" accept="image/*" required>
+        <button type="submit">분석하기</button>
+    </form>
+    
+    <p id="loading">AI가 열심히 분석 중입니다... 🧑‍🍳</p>
+    <img id="preview" src="" alt="업로드한 이미지 미리보기" style="display: none;" />
+    <div id="result">
+        <p>아직 분석 결과가 없습니다. 이미지를 업로드해 주세요.</p>
+    </div>
+
+    <script>
+        const form = document.getElementById('upload-form');
+        const fileInput = document.getElementById('file-input');
+        const loadingEl = document.getElementById('loading');
+        const resultEl = document.getElementById('result');
+        const previewEl = document.getElementById('preview');
+
+        // ⬇️ 여기가 수정되었습니다 ⬇️
+        const BACKEND_URL = 'http://127.0.0.1:5000/analyze'; 
+        // ⬆️ 백엔드 Flask 서버 주소 ⬆️
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault(); 
+
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert("파일을 선택해주세요.");
+                return;
+            }
+            const file = fileInput.files[0];
+            
+            previewEl.src = URL.createObjectURL(file);
+            previewEl.style.display = 'block';
+            loadingEl.style.display = 'block';
+            resultEl.innerHTML = "<p>분석 중...</p>";
+
+            const formData = new FormData();
+            formData.append('image_file', file); // 'main.py'에서 받을 이름
+
+            try {
+                // 백엔드로 파일 전송 (POST)
+                const response = await fetch(BACKEND_URL, { // 수정된 URL 사용
+                    method: 'POST',
+                    body: formData, 
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    throw new Error(errData.error || `HTTP 에러! 상태: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                // 결과 표시
+                resultEl.innerHTML = data.analysis; 
+
+            } catch (error) {
+                console.error("분석 중 오류 발생:", error);
+                resultEl.innerHTML = `<p style="color: red;">오류 발생: ${error.message}</p>`;
+            } finally {
+                loadingEl.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

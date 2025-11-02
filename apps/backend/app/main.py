@@ -1,7 +1,10 @@
+
 import os
 import google.generativeai as genai
 from dotenv import load_dotenv
-import PIL.Image  
+import PIL.Image
+from flask import Flask, request, jsonify
+from flask_cors import CORS # 1. CORS 임포트
 
 # --- .env 파일 경로 설정 (이전과 동일) ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -11,11 +14,26 @@ dotenv_path = os.path.join(project_root, '.env')
 # --- .env 파일 로드 (이전과 동일) ---
 load_dotenv(dotenv_path=dotenv_path)
 
-# --- ⬇️ 여기가 중요: 핵심 프롬프트 ⬇️ ---
-def build_prompt(image):
-    """AI에게 보낼 프롬프트와 이미지를 조합합니다."""
+# --- ⬇️ Flask 앱 설정 ⬇️ ---
+app = Flask(__name__)
+# 2. CORS 설정: 모든 주소(*)에서 오는 요청을 허용합니다.
+CORS(app) 
+# --- ⬆️ Flask 앱 설정 ⬆️ ---
+
+# --- API 키 로드 및 Gemini 설정 (main 함수 밖으로 이동) ---
+api_key = os.getenv("GOOGLE_API_KEY")
+if not api_key:
+    raise ValueError(f"GOOGLE_API_KEY를 찾을 수 없습니다. {dotenv_path} 파일을 확인하세요.")
+
+genai.configure(api_key=api_key)
+model = genai.GenerativeModel('gemini-2.5-flash')
+print("✅ API 키 및 Gemini 모델 로드 성공.")
+
+def analyze_image_with_gemini(image_file):
+    """Gemini AI에게 프롬프트와 이미지를 보내 분석을 요청하는 함수"""
     
-    # 1. AI에게 부여할 역할과 지시사항 (시스템 프롬프트)
+    img = PIL.Image.open(image_file) # 3. 파일로 바로 이미지 열기
+    
     system_prompt = """
     당신은 AI 영양사 '푸드 렌즈'입니다. 
     당신의 임무는 사용자가 업로드한 음식 사진을 분석하고, 
@@ -31,47 +49,42 @@ def build_prompt(image):
     출력: 분석 결과를 친절하고 간결한 문장으로 설명해주세요.
     """
     
-    # 2. 모델에게 보낼 최종 입력물 조합
-    # 텍스트(지시사항)와 이미지(분석 대상)를 리스트로 전달합니다.
-    return [system_prompt, image]
-
-
-def main():
-    # --- API 키 불러오기 (이전과 동일) ---
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError(f"GOOGLE_API_KEY를 찾을 수 없습니다. {dotenv_path} 파일을 확인하세요.")
-    print("API 키 로드 성공.")
-
-    # --- API 설정 (이전과 동일) ---
-    genai.configure(api_key=api_key)
-    
-    # --- 모델 설정 (이전과 동일) ---
-    model = genai.GenerativeModel('gemini-2.5-flash') 
-    
-    # --- 'test_food.jpg' 이미지 파일 열기 (이전과 동일) ---
-    img_path = os.path.join(current_dir, 'test_food.jpg')
-    
-    if not os.path.exists(img_path):
-        raise FileNotFoundError(f"{img_path} 파일을 찾을 수 없습니다. main.py와 같은 폴더에 넣어주세요.")
-        
-    img = PIL.Image.open(img_path)
-    print(f"{img_path} 이미지 파일 로드 성공.")
-    
-    # --- ⬇️ 여기가 수정된 부분 ⬇️ ---
-    
-    # 4. AI에게 '새로운 프롬프트'와 '이미지'를 함께 전송
-    print("Gemini Vision 모델에 '푸드 렌즈' 프롬프트를 전송합니다...")
-    
-    # 38번 답변 [cite: 38]의 단순 프롬프트 대신, 우리가 새로 정의한 build_prompt 함수 사용
-    prompt_package = build_prompt(img)
-    
+    prompt_package = [system_prompt, img]
     response = model.generate_content(prompt_package)
     
-    # 5. 모델의 응답 출력
-    print("\n--- '푸드 렌즈' AI 응답 ---")
-    print(response.text)
-    print("----------------------------")
+    return response.text
 
+# --- ⬇️ API 엔드포인트 ⬇️ ---
+@app.route("/analyze", methods=["POST"])
+def analyze_endpoint():
+    """/analyze 주소로 POST 요청이 오면 실행되는 함수"""
+    
+    print("ℹ️ /analyze 요청 받음.")
+    
+    # 4. 프론트엔드에서 'image_file'이라는 이름으로 보낸 파일 받기
+    if 'image_file' not in request.files:
+        return jsonify({"error": "이미지 파일이 없습니다."}), 400
+    
+    file = request.files['image_file']
+    
+    if file.filename == '':
+        return jsonify({"error": "파일이 선택되지 않았습니다."}), 400
+
+    try:
+        # 5. AI 분석 함수 호출
+        analysis_result = analyze_image_with_gemini(file)
+        
+        # 6. 프론트엔드로 JSON 형태로 결과 전송
+        print("✅ 분석 완료, 결과 전송.")
+        return jsonify({"analysis": analysis_result})
+
+    except Exception as e:
+        print(f"❌ 분석 중 오류 발생: {e}")
+        return jsonify({"error": f"AI 분석 중 오류 발생: {e}"}), 500
+# --- ⬆️ API 엔드포인트 ⬆️ ---
+
+
+# 7. 스크립트가 직접 실행될 때 Flask 서버를 5000번 포트로 실행
 if __name__ == "__main__":
-    main()
+    # host='0.0.0.0'은 모든 IP에서 접근 가능하게 함
+    app.run(host='0.0.0.0', port=5000, debug=True)
