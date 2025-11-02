@@ -1,0 +1,121 @@
+/* --- frontend/style.css --- */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    max-width: 900px;
+    margin: 2em auto;
+    padding: 0 1.5em;
+    background-color: #f8f9fa;
+    color: #333;
+}
+
+h1, h3 {
+    color: #1a73e8; /* Google Blue */
+}
+
+h1 {
+    border-bottom: 2px solid #eee;
+    padding-bottom: 10px;
+}
+
+/* 폼 스타일 */
+form {
+    background: #fff;
+    padding: 1.5em;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    margin-bottom: 1.5em;
+}
+
+input[type="file"] {
+    border: 1px solid #ddd;
+    padding: 8px;
+    border-radius: 4px;
+}
+
+button {
+    background-color: #1a73e8; /* Google Blue */
+    color: white;
+    border: none;
+    padding: 12px 18px;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+button:hover {
+    background-color: #185abc;
+}
+
+#loading {
+    display: none;
+    color: #555;
+    font-style: italic;
+    text-align: center;
+    padding: 1em;
+}
+
+/* 메인 컨테이너 */
+#main-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5em;
+    margin-top: 1.5em;
+}
+
+#chat-wrapper {
+    flex: 3; /* 채팅창을 더 넓게 */
+    min-width: 350px;
+}
+#image-wrapper {
+    flex: 2; /* 이미지 영역 */
+    min-width: 300px;
+}
+
+/* 채팅 로그 */
+#chat-log {
+    height: 500px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    padding: 1em;
+    background: #fff;
+    border-radius: 8px;
+    line-height: 1.6;
+}
+
+/* Markdown 렌더링 스타일 */
+#chat-log .chat-message.ai h3,
+#chat-log .chat-message.ai h4,
+#chat-log .chat-message.ai strong {
+    color: #1a73e8;
+}
+#chat-log .chat-message.ai ul {
+    padding-left: 20px;
+}
+
+.chat-message { margin-bottom: 1.5em; }
+.chat-message.user {
+    font-weight: bold;
+    color: #0056b3;
+}
+.chat-message.user strong { color: #0056b3; }
+.chat-message.ai { }
+
+#chat-form {
+    display: none; /* JS가 열어줌 */
+    margin-top: 1em;
+}
+#chat-form input[type="text"] {
+    width: 75%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+/* 이미지 스타일 */
+#image-wrapper img {
+    max-width: 100%;
+    height: auto;
+    margin-top: 1em;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+}

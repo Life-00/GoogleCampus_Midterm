@@ -3,30 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 푸드 렌즈 (대화형 v2.1)</title>
-    <style>
-        body { font-family: sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; }
-        img { max-width: 100%; height: auto; margin-top: 1em; border: 1px solid #ddd; }
-        #loading { display: none; color: #888; }
-        #main-container { display: flex; flex-wrap: wrap; gap: 1.5em; margin-top: 1.5em; }
-        #chat-wrapper { flex: 1; min-width: 350px; }
-        #chat-log { height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 1em; background: #f9f9f9; white-space: pre-wrap; }
-        .chat-message { margin-bottom: 1em; }
-        .chat-message.user { font-weight: bold; color: #0056b3; }
-        .chat-message.ai { }
-        #chat-form { display: none; margin-top: 1em; }
-        #chat-form input { width: 70%; padding: 0.5em; }
-        #chat-form button { width: 25%; padding: 0.5em; }
-        #image-wrapper { flex: 1; min-width: 300px; }
-        #image-wrapper h3 { margin-top: 0; }
-        #imagen-generated-img { display: none; }
-    </style>
+    <title>AI 푸드 렌즈 (최종 v3)</title>
+    
+    <link rel="stylesheet" href="style.css">
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
     <h1>📸 AI 푸드 렌즈 (Gemini + Imagen + Chat)</h1>
-    <p>분석하고 싶은 음식 사진을 업로드하면, AI와 대화를 시작할 수 있습니다.</p>
     
     <form id="upload-form">
+        <p>분석하고 싶은 음식 사진을 업로드하면, AI와 대화를 시작할 수 있습니다.</p>
         <input type="file" id="file-input" accept="image/*" required>
         <button type="submit">1. 분석 시작하기</button>
     </form>
@@ -36,55 +23,76 @@
     <div id="main-container">
         <div id="chat-wrapper">
             <h3>Gemini 대화창:</h3>
-            <div id="chat-log"><p>아직 분석 결과가 없습니다.</p></div>
+            <div id="chat-log">
+                <p>아직 분석 결과가 없습니다.</p>
+            </div>
             <form id="chat-form">
                 <input type="text" id="chat-input" placeholder="후속 질문하기 (예: 칼로리 낮추려면?)" required>
                 <button type="submit">2. 질문 전송</button>
             </form>
         </div>
+        
         <div id="image-wrapper">
+            <h3>(원본 업로드 이미지)</h3>
+            <img id="preview" src="" alt="업로드한 이미지 미리보기" style="display: none;" />
+
             <h3>Imagen 추천 이미지:</h3>
             <img id="imagen-generated-img" src="" alt="AI가 생성한 추천 식단 이미지" />
             <p id="imagen-text">아직 생성된 이미지가 없습니다.</p>
-            <h3>(원본 업로드 이미지)</h3>
-            <img id="preview" src="" alt="업로드한 이미지 미리보기" style="display: none;" />
         </div>
     </div>
 
     <script>
-        // --- ⬇️ JS 로직 수정 ⬇️ ---
+        // JS 변수 선언부
         const uploadForm = document.getElementById('upload-form');
         const fileInput = document.getElementById('file-input');
         const loadingEl = document.getElementById('loading');
-        
         const chatLogEl = document.getElementById('chat-log');
         const chatForm = document.getElementById('chat-form');
         const chatInput = document.getElementById('chat-input');
-        
         const imagenImgEl = document.getElementById('imagen-generated-img');
         const imagenTextEl = document.getElementById('imagen-text');
         const previewEl = document.getElementById('preview');
-
         const ANALYZE_URL = 'http://127.0.0.1:5000/analyze'; 
         const CHAT_URL = 'http://127.0.0.1:5000/chat';
+        let chatHistory = []; 
+        let originalImageBase64 = null; 
 
-        let chatHistory = []; // ⭐️ (수정) [{'role': 'user'|'ai', 'message': '...'}]
-        let originalImageBase64 = null; // ⭐️ (신규) 원본 이미지 Base64 저장 변수
-
-        // (공통 함수) 채팅 로그에 메시지 추가
+        // 3. 'appendToChatLog' 함수
         function appendToChatLog(message, sender = 'ai') {
             const messageEl = document.createElement('div');
             messageEl.classList.add('chat-message', sender);
             
-            // ⭐️ (수정) 프론트에서 롤(Role) 구분 텍스트 추가
             const senderTag = (sender === 'user') ? 'You:' : 'Food Lens:';
-            messageEl.innerHTML = `<strong>${senderTag}</strong><br>${message.replace(/\n/g, '<br>')}`;
             
+            let messageContent;
+            if (sender === 'ai') {
+                // AI 응답은 Markdown으로 파싱
+                messageContent = marked.parse(message);
+            } else {
+                // 사용자 입력은 그냥 텍스트로
+                messageContent = message.replace(/\n/g, '<br>');
+            }
+            
+            messageEl.innerHTML = `<strong>${senderTag}</strong><br>${messageContent}`;
             chatLogEl.appendChild(messageEl);
             chatLogEl.scrollTop = chatLogEl.scrollHeight;
         }
 
-        // (공통 함수) Imagen 이미지 업데이트 (이전과 동일)
+        // fileToBase64 함수
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => {
+                    const base64String = reader.result.split(',')[1];
+                    resolve(base64String);
+                };
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        // updateImagen 함수
         function updateImagen(imageUrl) {
             if (imageUrl) {
                 imagenImgEl.src = imageUrl;
@@ -97,21 +105,7 @@
             }
         }
         
-        // ⭐️ (신규) 파일 리더를 이용해 이미지를 Base64로 변환하는 함수
-        function fileToBase64(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => {
-                    // "data:image/jpeg;base64," 부분을 제거하고 순수 Base64 데이터만 반환
-                    const base64String = reader.result.split(',')[1];
-                    resolve(base64String);
-                };
-                reader.onerror = error => reject(error);
-            });
-        }
-
-        // 1. (제출 이벤트 1) 이미지 업로드
+        // uploadForm 이벤트 리스너
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault(); 
             const file = fileInput.files[0];
@@ -123,9 +117,8 @@
             chatLogEl.innerHTML = "<p>분석 중...</p>";
             imagenTextEl.innerHTML = "생성 중...";
             imagenImgEl.style.display = 'none';
-            chatHistory = []; // 채팅 기록 초기화
+            chatHistory = [];
 
-            // ⭐️ (신규) 파일 Base64 변환
             try {
                 originalImageBase64 = await fileToBase64(file);
             } catch (error) {
@@ -138,16 +131,13 @@
             formData.append('image_file', file);
 
             try {
-                const response = await fetch(ANALYZE_URL, {
-                    method: 'POST',
-                    body: formData, 
-                });
+                const response = await fetch(ANALYZE_URL, { method: 'POST', body: formData });
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.error);
                 
                 chatLogEl.innerHTML = ""; 
-                appendToChatLog(data.analysis, 'ai'); // AI 첫 응답 추가
-                chatHistory.push({ role: 'ai', message: data.analysis }); // ⭐️ 기록 저장
+                appendToChatLog(data.analysis, 'ai');
+                chatHistory.push({ role: 'ai', message: data.analysis });
                 
                 updateImagen(data.new_image_url);
                 chatForm.style.display = 'flex';
@@ -160,18 +150,18 @@
             }
         });
 
-        // 2. (제출 이벤트 2) 후속 질문 전송
+        // ⬇️ --- (수정) 'Show more'가 제거된 chatForm 이벤트 리스너 --- ⬇️
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const message = chatInput.value.trim();
             if (!message) return;
 
-            appendToChatLog(message, 'user'); // 사용자 메시지 먼저 추가
-            chatHistory.push({ role: 'user', message: message }); // ⭐️ 기록 저장
+            appendToChatLog(message, 'user');
+            // 'Show more'가 여기서 제거되었습니다.
+            chatHistory.push({ role: 'user', message: message });
             chatInput.value = ""; 
             loadingEl.style.display = 'block';
             
-            // ⭐️ (수정) 이전 대화 기록을 하나의 텍스트로 합치기
             const history_text = chatHistory
                 .map(entry => `${entry.role}: ${entry.message}`)
                 .join('\n\n');
@@ -182,16 +172,16 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         message: message,
-                        history_text: history_text, // ⭐️ 합친 텍스트 전송
-                        image_base64: originalImageBase64 // ⭐️ 원본 이미지 전송
+                        history_text: history_text,
+                        image_base64: originalImageBase64
                     }), 
                 });
 
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.error);
 
-                appendToChatLog(data.analysis, 'ai'); // AI 후속 응답 추가
-                chatHistory.push({ role: 'ai', message: data.analysis }); // ⭐️ 기록 저장
+                appendToChatLog(data.analysis, 'ai');
+                chatHistory.push({ role: 'ai', message: data.analysis });
                 
                 updateImagen(data.new_image_url);
 
@@ -202,7 +192,7 @@
                 loadingEl.style.display = 'none';
             }
         });
-        // --- ⬆️ JS 로직 수정 ⬆️ ---
+        // --- ⬆️ (수정) ⬆️ ---
     </script>
 </body>
 </html>
