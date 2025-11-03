@@ -3,6 +3,22 @@
 
 이 프로젝트는 `Poetry`를 사용하여 Python 가상 환경과 라이브러리(의존성)를 관리합니다.
 
+## 🛠️ (필수) 로컬 개발 환경 설정
+
+이 데모는 2개의 Google AI API와 Google Cloud 인증을 사용합니다.
+
+### 0. .env 파일 설정
+
+프로젝트 최상위 폴더 (`/`)에 `.env` 파일을 생성하고 다음 2가지 키를 입력해야 합니다.
+
+```dotenv
+# Gemini API 키 (Google AI Studio에서 발급)
+GOOGLE_API_KEY="..."
+
+# Imagen API를 위한 Google Cloud 프로젝트 ID
+GOOGLE_CLOUD_PROJECT="..."
+```
+
 ### 1. (필수) 개발 환경 활성화
 
 코드를 작성하거나 실행하기 전, **매번** 터미널에서 **가장 먼저** 다음 명령어를 실행하여 Poetry 가상 환경을 활성화해야 합니다.
